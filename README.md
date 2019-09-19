@@ -1,6 +1,6 @@
 # GAN_LLD_32x32
-##Contents
-###Emplementing DCGAN
+##Contents \
+###Emplementing DCGAN \
 ###Emplementing Autoencoder
 ###dataloader 
 ###Clustering 
