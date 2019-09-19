@@ -2,12 +2,7 @@
 
 
 
-##Contents \
-###Emplementing DCGAN \
-###Emplementing Autoencoder \
-###dataloader  \
-###Clustering  \
-###Comparisons of different parameters of NNs \
+
 
 
 
@@ -15,64 +10,372 @@
 
 write some descriptions here
 
+## Environment
+Pytorch version:
+
 ## Contents
 
 
-1.Emplementing DCGAN \
-2.Emplementing Autoencoder \
+1.DCGAN \
+2.Autoencoder \
 3.dataloader  \
 4.Clustering  \
 5.Comparisons of different parameters of NNs 
 
-### Prerequisites
+## Data Loader 
 
-What things you need to install the software and how to install them
-
-```
-Give examples
-```
-
-### Installing
-
-A step by step series of examples that tell you how to get a development env running
-
-Say what the step will be
+### Loading 
+Below is the data loader for loading HDF5. it requires the package "h5py" and "torch.utils.data"
 
 ```
-Give the example
+import h5py
+import torch.utils.data as tud
 ```
 
-And repeat
+```
+class loadHDF5(tud.Dataset):
+    '''
+    this will output the [n,3,32,32] tensor without normalizing 
+    '''
+    def __init__(self, file_path,transform=None):
+        super(loadHDF5, self).__init__()
+        h5_file = h5py.File(file_path)
+        self.data = h5_file.get('data')
+        self.target = h5_file.get('label')
+        self.transform = transform
+        
+    def __getitem__(self):   
+
+        return torch.from_numpy((self.data[:,:,:,:])).float()
+
+
+    def __len__(self):
+        return self.data.shape[0]
+```
+For example, we can set the path and file name into this python class, and use the methos "__getitem__()" to load the image. This method would return a 4D tensor, EX: [64:3:32:32].
+```
+ld5=loadHDF5('/your path/file_name.hdf5')
+img = ld5.__getitem__() 
+```
+### Transforming 
+Since the file it returns is a 4D tensor, I could not apply transform, i.e. resize, normalize, etc. So I use a for loop to transform all of the images inside then cat them back to a 4D tensor. Probably there is more efficient way, but I didn't put too much time on it. This way occupies a lot of memories, so have to clean the list after cat them to tensor.  
+```
+outputs=[]
+for i,ch in enumerate(range(img.size(0)), 0):
+    tensor = transform(img[ch,:,:,:])
+    tensor = tensor.unsqueeze(0)
+    outputs.append(tensor)
+    
+icons_32 = torch.cat(outputs, dim=0)
+```
+
+
+## DCGAN
+
+
+  ### Hyperparameters
+  ```
+# Batch size during training
+batch_size = 64
+# size of images
+image_size = 32
+# Number of training epochs
+num_epochs =50
+# Number of channels in the training images. For color images this is 3, black & white is 1.
+nc = 3
+# Size of z latent vector (i.e. size of generator input)
+nz = 100
+# Number feature maps(filters) in generator
+ngf = 64
+# Number feature maps(filters)  in discriminator
+ndf = 64
+# Beta1 hyperparam for Adam optimizers, default is 0.9
+beta1 = 0.5
+# Learning rate for optimizers
+lr = 0.00003
+  ```
+
+
+  ### Generator
+
 
 ```
-until finished
+#generator
+class generator(nn.Module):
+    # initializers
+    def __init__(self):
+        super(generator, self).__init__()
+        self.main = nn.Sequential(
+            # input is Z, going into a convolution
+            nn.ConvTranspose2d( nz, ngf * 4, 4, 1, 0, bias=False), 
+            nn.BatchNorm2d(ngf * 4),
+            nn.ReLU(True),
+            # state size. (ngf*4) x 4 x 4
+            nn.ConvTranspose2d(ngf * 4, ngf * 2, 4, 2, 1, bias=False), 
+            nn.BatchNorm2d(ngf * 2),
+            nn.ReLU(True),
+            # state size. (ngf*2) x 8 x 8
+            nn.ConvTranspose2d( ngf * 2, ngf * 1, 4, 2, 1, bias=False), 
+            nn.BatchNorm2d(ngf * 1),
+            nn.ReLU(True),
+            # state size. (ngf*1) x 16 x 16
+            nn.ConvTranspose2d( ngf, nc, 4, 2, 1, bias=False), 
+            nn.Tanh()
+            # state size. (nc) x 32 x 32
+            )
+        
+            # forward method
+    def forward(self, input):
+
+        return self.main(input)
+```
+  ### Discriminator
+
+
+```
+#discriminator   
+class discriminator(nn.Module):
+    # initializers
+    def __init__(self):
+        super(discriminator, self).__init__()
+        self.main = nn.Sequential(
+            # input is (nc) x 32 x 32
+            nn.Conv2d(nc, ndf, 4, 2, 1, bias=False), 
+            nn.LeakyReLU(0.2, inplace=True),
+            # state size. (ndf) x 16 x 16
+            nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ndf * 2),
+            nn.LeakyReLU(0.2, inplace=True),
+            # state size. (ndf*2) x 8 x 8
+            nn.Conv2d(ndf * 2, ndf * 4, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ndf * 4),
+            nn.LeakyReLU(0.2, inplace=True),
+            # state size. (ndf*4) x 4 x 4
+            nn.Conv2d(ndf * 4, 1, 4, 1, 0, bias=False),  
+            nn.Sigmoid()
+        )
+
+            # forward method
+    def forward(self, input):
+        return self.main(input)
 ```
 
-End with an example of getting some data out of the system or using it for a little demo
 
-## Running the tests
 
-Explain how to run the automated tests for this system
+  ### Setting
+  We have to save the model to a variable for running first. The Criterion here is the loss function, we can choose different loss functions such as, CrossEntropyh, MSE, etc. Notice that the loss function is from the package "torch.nn". \
+  \
+  Fort he optimizer, we can choose like Gradient Descent or Stochastic Gradient Descent, etc. The optimizer comes from the "torch.optim" package. \
+  \
+  The fixed_noise is just for checking the output for the generator. Notice that it has to be set ".to(device)" for GPU to run. The real_label and fake_label is to calculate the loss for the discriminator's judgement for the images from the real dataset and the generator. It doesn't mean this is a kind of supervised algorithm.  \
+  \
+  I stored the loss for the discriminator and the generator to check if the model runs properly during training. However, low loss does not mean the models can generate images properly, we still need to check the results that are generated by the generator.\
+  \
+  Using ".cuda()", we can set our model to use the resource of GPU during training. \
+  \
 
-### Break down into end to end tests
+   
+```  
+#save the model
+G=generator()
+D=discriminator()
 
-Explain what these tests test and why
+#set the loss function
+criterion = nn.BCELoss()
+
+# Setup Adam optimizers for both G and D
+optimizerD = opt.Adam(D.parameters(), lr=lr, betas=(beta1, 0.999))
+optimizerG = opt.Adam(G.parameters(), lr=lr, betas=(beta1, 0.999))
+
+#fixed size of noise for plotting manually or testing 
+fixed_noise = torch.randn(64, nz, 1, 1).to(device) 
+
+# Establish convention for real and fake labels during training
+real_label = 1
+fake_label = 0
+
+#just for tracing the performance of model
+G_losses = []
+D_losses = []
+
+# set model to GPU
+D.cuda()
+G.cuda()
+```
+  ### Set the weights
+    For applying weights, we can either apply for random weights (generated from normal distribution), or the weights saved from training process. 
+  
+```
+#apply initialize weights
+G.apply(weights_init)
+D.apply(weights_init)
+
+```
+```
+#apply saved weights
+stateG_icon32x32=torch.load('/your path/file_name')
+G.load_state_dict(stateG_icon32x32['state_dict'])
+optimizerG.load_state_dict(stateG_icon32x32['optimizer'])
+
+stateD_icon32x32=torch.load('/your path/file_name')
+D.load_state_dict(stateD_icon32x32['state_dict'])
+optimizerD.load_state_dict(stateD_icon32x32['optimizer'])
+```
+  ### main
+  
+  ```
+  for epoch in range(num_epochs):
+
+    #save the loss for showing stats
+    running_lossG=[]
+    running_lossD=[]
+    # For each batch in the dataloader
+    for i, data in enumerate(cluster_0_Loader, 0):
+
+        '''
+        ###########################
+        # (1) Update D network: maximize log(D(x)) + log(1 - D(G(z)))
+        ###########################
+        ### Train with all-real batch
+        '''
+        # Firstly, have to set grad to zero
+        D.zero_grad()
+
+        real_img = data.to(device) 
+        # Set the batch size same as the image batch size we input every time
+        #sometimes it would not be same as the setting at original e.g.64, 60000/64 will left 32)
+        b_size = real_img.size(0)
+        # Create the label for images from true dataset   
+        one_label = torch.full((b_size,), real_label).to(device)  
+        # Forward pass real image batch through D
+        output = D(real_img).view(-1).to(device) 
+        # Calculate loss on all-real batch
+        errD_real = criterion(output, one_label)
+        # Calculate gradients for D and backpropagate
+        errD_real.backward()
+        D_x = output.mean().item()
+        
+        '''
+        ###################################
+        ## Train D with all-fake batch
+        ###################################
+        '''                
+
+        # Generate batch of latent vectors(100-vector)
+        noise = torch.randn(b_size, nz, 1, 1).to(device) 
+        # Generate fake image batch with G
+        fake = G(noise)
+
+        zero_label = torch.full((b_size,), fake_label).to(device) 
+        # Input all fake image batch to D
+        output = D(fake.detach()).view(-1).to(device) 
+        # Calculate D's loss on the all-fake batch
+        errD_fake = criterion(output, zero_label)
+        # Calculate the gradients for this fake batch and backpropagate
+        errD_fake.backward()
+     
+        ########### for statistics ############
+        D_G_z1 = output.mean().item()
+        # Add the gradients from the all-real and all-fake batches
+        errD = errD_real + errD_fake
+        #######################################
+        
+        # Update D
+        optimizerD.step()
+        '''
+        ###########################
+        # (2) Update G network: maximize log(D(G(z)))
+        ###########################
+        '''
+        G.zero_grad()
+
+        # Since we just updated D, perform another forward pass of all-fake batch through D
+
+        output = D(fake).view(-1)
+        # Calculate G's loss based on this output, G should make D thinks this is real(one label)
+        errG = criterion(output, one_label)
+        # Calculate gradients for G and backpropagate
+        errG.backward()
+        
+        ########### for statistics ############
+        D_G_z2 = output.mean().item()
+        #######################################
+        
+        # Update G
+        optimizerG.step()
+        
+        
+        #print the loss for G and D
+        running_lossG.append(errG.item())
+        running_lossD.append(errD.item())
+        if i % 3450 == 0:
+            print('[%d/%d][%d/%d]\tLoss_D: %.4f\tLoss_G: %.4f\tD(x): %.4f\tD(G(z)): %.4f / %.4f'
+                  % (epoch, num_epochs, i, len(cluster_0_Loader),
+                     errD.item(), errG.item(), D_x, D_G_z1, D_G_z2))
+
+    # Save Losses for plotting later
+    if epoch % 1==0:
+        G_losses.append(np.mean(errG))
+        D_losses.append(np.mean(errD))
+        
+        
+        
+    if epoch % 2==0:
+        #samples = fake.detach()
+        #samples = samples.view(samples.size(0), 3, 32, 32)
+        #showImages(samples)
+
+        stateG_icon32x32 = {
+            'epoch': epoch,
+            'state_dict': G.state_dict(),
+            'optimizer': optimizerG.state_dict(),
+
+        }
+        torch.save(stateG_icon32x32, '/content/drive/My Drive/Colab Notebooks/LLD_32/G_icon_new')
+
+        stateD_icon32x32 = {
+            'epoch': epoch,
+            'state_dict': D.state_dict(),
+            'optimizer': optimizerD.state_dict(),
+
+        }
+        torch.save(stateD_icon32x32, '/content/drive/My Drive/Colab Notebooks/LLD_32/D_icon_new')
+  ```
+## Autoencoder 
+
+  ### Encoder 
+
+```
+
+```
+
+  ### Decoder 
+
+```
+
+```
+
+
+
+## Clustering
+
+
+  ### 
+
 
 ```
 Give an example
 ```
 
-### And coding style tests
+## Comparisons of results using different parameters
 
-Explain what these tests test and why
 
-```
-Give an example
-```
 
-## Deployment
 
-Add additional notes about how to deploy this on a live system
+
+
+
+
 
 ## Built With
 
