@@ -16,9 +16,9 @@ Pytorch version:
 ## Contents
 
 
-1.DCGAN \
-2.Autoencoder \
-3.dataloader  \
+1.dataloader \
+2.DCGAN\
+3.Autoencoder  \
 4.Clustering  \
 5.Comparisons of different parameters of NNs 
 
@@ -57,7 +57,7 @@ For example, we can set the path and file name into this python class, and use t
 ld5=loadHDF5('/your path/file_name.hdf5')
 img = ld5.__getitem__() 
 ```
-### Transforming 
+### Transform 
 Since the file it returns is a 4D tensor, I could not apply transform, i.e. resize, normalize, etc. So I use a for loop to transform all of the images inside then cat them back to a 4D tensor. Probably there is more efficient way, but I didn't put too much time on it. This way occupies a lot of memories, so have to clean the list after cat them to tensor.  
 ```
 outputs=[]
@@ -97,7 +97,8 @@ lr = 0.00003
 
 
   ### Generator
-
+Unlike Keras, we have to give the number of input channels and the number of padding in Pytorch. Take "nn.Conv2d(nc, ndf, 4, 2, 1), " in the discrminator as an example. The First variable "nc" represents the number of channels, for colored image it is 3. The second variable "ndf" represent the number of feature maps to output, which is shown in Figure 1. \
+The last 3 variables define the size of output image size, kernel size(k) = 4, stride(s) = 2, and padding(p) = 1. Let l = 32 be the length of input image. The length of output image(l')  is equal to (l-k)/2+1 = 16 in this case. Since the feature maps and the image size need to be matched for each layer, we can use the equation to make sure every size is correct for each layer.   
 
 ```
 #generator
@@ -107,19 +108,19 @@ class generator(nn.Module):
         super(generator, self).__init__()
         self.main = nn.Sequential(
             # input is Z, going into a convolution
-            nn.ConvTranspose2d( nz, ngf * 4, 4, 1, 0, bias=False), 
+            nn.ConvTranspose2d( nz, ngf * 4, 4, 1, 0), 
             nn.BatchNorm2d(ngf * 4),
             nn.ReLU(True),
             # state size. (ngf*4) x 4 x 4
-            nn.ConvTranspose2d(ngf * 4, ngf * 2, 4, 2, 1, bias=False), 
+            nn.ConvTranspose2d(ngf * 4, ngf * 2, 4, 2, 1), 
             nn.BatchNorm2d(ngf * 2),
             nn.ReLU(True),
             # state size. (ngf*2) x 8 x 8
-            nn.ConvTranspose2d( ngf * 2, ngf * 1, 4, 2, 1, bias=False), 
+            nn.ConvTranspose2d( ngf * 2, ngf * 1, 4, 2, 1), 
             nn.BatchNorm2d(ngf * 1),
             nn.ReLU(True),
             # state size. (ngf*1) x 16 x 16
-            nn.ConvTranspose2d( ngf, nc, 4, 2, 1, bias=False), 
+            nn.ConvTranspose2d( ngf, nc, 4, 2, 1), 
             nn.Tanh()
             # state size. (nc) x 32 x 32
             )
@@ -140,18 +141,18 @@ class discriminator(nn.Module):
         super(discriminator, self).__init__()
         self.main = nn.Sequential(
             # input is (nc) x 32 x 32
-            nn.Conv2d(nc, ndf, 4, 2, 1, bias=False), 
+            nn.Conv2d(nc, ndf, 4, 2, 1), 
             nn.LeakyReLU(0.2, inplace=True),
             # state size. (ndf) x 16 x 16
-            nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=False),
+            nn.Conv2d(ndf, ndf * 2, 4, 2, 1),
             nn.BatchNorm2d(ndf * 2),
             nn.LeakyReLU(0.2, inplace=True),
             # state size. (ndf*2) x 8 x 8
-            nn.Conv2d(ndf * 2, ndf * 4, 4, 2, 1, bias=False),
+            nn.Conv2d(ndf * 2, ndf * 4, 4, 2, 1),
             nn.BatchNorm2d(ndf * 4),
             nn.LeakyReLU(0.2, inplace=True),
             # state size. (ndf*4) x 4 x 4
-            nn.Conv2d(ndf * 4, 1, 4, 1, 0, bias=False),  
+            nn.Conv2d(ndf * 4, 1, 4, 1, 0),  
             nn.Sigmoid()
         )
 
