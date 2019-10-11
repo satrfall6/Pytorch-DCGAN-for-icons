@@ -16,7 +16,7 @@ Pytorch version:
 ## Contents
 
 
-1.dataloader \
+1.Dataloader with Transform \
 2.DCGAN\
 3.Autoencoder  \
 4.Clustering  \
