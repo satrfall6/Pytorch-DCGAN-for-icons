@@ -28,9 +28,6 @@ from torch.nn.utils import spectral_norm
 #check if GPU is working and set device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 device
-
-
-
        
 
 
@@ -40,7 +37,7 @@ device
 document = os.path.join(os.path.expanduser("~"), "/Users/s4503302/Documents/LLD_DCGAN")
 loadPath_2x = os.path.join(document, "icon_2x.pt")
 loadPath_4x = os.path.join(document, "icon_4x.pt")
-
+#%%
 #load seperately
 image_size = 32
 icons_32_4x=torch.load(loadPath_4x)
@@ -89,24 +86,24 @@ def saveImages(imgs,path):
 
 
 ##DCGAN using batchnorm
-#generator
 
+#generator
 class generator(nn.Module):
     # initializers
     def __init__(self):
         super(generator, self).__init__()
         self.main = nn.Sequential(
             # input is Z, going into a convolution
-            nn.ConvTranspose2d( nz, ngf * 4, 4, 1, 0, bias=False), 
-            nn.BatchNorm2d(ngf * 4),
+            spectral_norm(nn.ConvTranspose2d( nz, ngf * 4, 4, 1, 0, bias=False)), 
+  
             nn.LeakyReLU(0.2, inplace=True),
             # state size. (ngf*4) x 4 x 4
-            nn.ConvTranspose2d(ngf * 4, ngf * 2, 4, 2, 1, bias=False), 
-            nn.BatchNorm2d(ngf * 2),
+            spectral_norm(nn.ConvTranspose2d(ngf * 4, ngf * 2, 4, 2, 1, bias=False)), 
+ 
             nn.LeakyReLU(0.2, inplace=True),
             # state size. (ngf*2) x 8 x 8
-            nn.ConvTranspose2d( ngf * 2, ngf * 1, 4, 2, 1, bias=False), 
-            nn.BatchNorm2d(ngf ),
+            spectral_norm(nn.ConvTranspose2d( ngf * 2, ngf * 1, 4, 2, 1, bias=False)), 
+  
             nn.LeakyReLU(0.2, inplace=True),
             # state size. (ngf*1) x 16 x 16
             nn.ConvTranspose2d( ngf, nc, 4, 2, 1, bias=False), 
@@ -121,27 +118,24 @@ class generator(nn.Module):
         return self.main(input)
 
 #discriminator   
-#discriminator   
 class discriminator(nn.Module):
     # initializers
     def __init__(self):
         super(discriminator, self).__init__()
         self.main = nn.Sequential(
             # input is (nc) x 32 x 32
-            nn.Conv2d(nc, ndf, 4, 2, 1, bias=False), 
-            nn.BatchNorm2d(ndf),
+            spectral_norm(nn.Conv2d(nc, ndf, 4, 2, 1, bias=False)), 
             nn.LeakyReLU(0.2, inplace=True),
             # state size. (ndf) x 16 x 16
-            nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ndf * 2),
+            spectral_norm(nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=False)),
+   
             nn.LeakyReLU(0.2, inplace=True),
             # state size. (ndf*2) x 8 x 8
-            nn.Conv2d(ndf * 2, ndf * 4, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ndf * 4),
+            spectral_norm(nn.Conv2d(ndf * 2, ndf * 4, 4, 2, 1, bias=False)),
 
             nn.LeakyReLU(0.2, inplace=True),
             # state size. (ndf*4) x 4 x 4
-            nn.Conv2d(ndf * 4, 1, 4, 1, 0, bias=False),
+            spectral_norm(nn.Conv2d(ndf * 4, 1, 4, 1, 0, bias=False)),  
             nn.Sigmoid()
         )
 
@@ -165,9 +159,9 @@ ngf = 64
 # Size of feature maps in discriminator
 ndf = 64
 
-# Establish convention for real and fake labels during training
-real_label = 1
-fake_label = 0
+# adjust label smoothing here
+real_label = 0.94
+fake_label = 0.03
 
 
 #just for tracing the performance of model
@@ -195,10 +189,19 @@ G.apply(weights_init)
 D.apply(weights_init)
 '''
 
-#path for loading and saving the weight for training
-G_weightsPath = os.path.join(document,               "G_G4C_D4C_2x_nz100gf64_Glr000065_Dlr00042_L88_05")
-D_weightsPath = os.path.join(document,               "D_G4C_D4C_2x_nz100gf64_Glr000065_Dlr00042_L88_05")
-
+##path for loading and saving the weight for training
+#weights with SN, without adding noise
+G_weightsPath = os.path.join(document,               "G_SNG4CBN_SND4C_2x_nz100gf64_Glr000065_Dlr00042")
+D_weightsPath = os.path.join(document,               "D_SNG4CBN_SND4C_2x_nz100gf64_Glr000065_Dlr00042")
+#%%
+#weights with SN and adding noise
+G_weightsPath = os.path.join(document,               "G_SNG4CBN_SND4CNoise_2x_nz100gf64_Glr000065_Dlr00042_L88_05")
+D_weightsPath = os.path.join(document,               "D_SNG4CBN_SND4CNoise_2x_nz100gf64_Glr000065_Dlr00042_L88_05")
+#%%
+#weights with SN and adding noise, training progressively using 4 clusters from KMeans
+G_weightsPath = os.path.join(document,               "G_SNG4CBN_SND4CNoise_c0c3c2c1_nz100gf64_Glr000065_Dlr00042_L88_05")
+D_weightsPath = os.path.join(document,               "D_SNG4CBN_SND4CNoise_c0c3c2c1_nz100gf64_Glr000065_Dlr00042_L88_05")
+#%%
 # or load the pre-trained weights
 stateG_icon32x32=torch.load(G_weightsPath,map_location=torch.device('cpu'))
 G.load_state_dict(stateG_icon32x32['state_dict'])
@@ -238,8 +241,10 @@ for epoch in range(num_epochs):
         # Firstly, have to set grad to zero
         
         ## Format batch
-        #different from MNIST, our data structure do not have label 
+         
         real_img = data.to(device) 
+        #adding noise to the real image
+        real_img = real_img+torch.randn(real_img.size()).to(device)*0.1
         # Set the batch size same as the image batch size we input every time
         #sometimes it would not be same as the setting at original e.g.64, 60000/64 will left 32)
         b_size = real_img.size(0)
@@ -253,6 +258,8 @@ for epoch in range(num_epochs):
         # Forward pass real batch through D & G
         D_real = D(real_img).view(-1).to(device) 
         fake = G(noise)
+        #add noise to image from the generator
+        fake = fake+torch.randn(fake.size()).to(device)*0.16
         D_fake = D(fake).view(-1).to(device)                                                   
                                                           
         # Calculate loss on all-real batch
@@ -272,6 +279,8 @@ for epoch in range(num_epochs):
         # Since we just updated D, perform another forward pass of all-fake batch through D
         noise = torch.randn(b_size, nz, 1, 1).to(device)
         fake = G(noise)
+        #add noise to image from the generator
+        fake = fake+torch.randn(fake.size()).to(device)*0.16
         D_fake = D(fake).view(-1).to(device)                                                   
 
         # Calculate G's loss based on this output
