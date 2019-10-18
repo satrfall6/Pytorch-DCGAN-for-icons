@@ -15,11 +15,7 @@ import torchvision
 import torchvision.transforms as transforms
 import numpy as np
 import matplotlib.pyplot as plt
-from torch.nn import functional as F
-import numpy as np
-from sklearn.cluster import KMeans
 import os
-from torch.nn.utils import spectral_norm
 
 
 
@@ -185,6 +181,7 @@ optimizerD = opt.Adam(D.parameters(), lr=0.00042, betas=(0.9, 0.999))
 optimizerG = opt.Adam(G.parameters(), lr=0.000065, betas=(0.9, 0.999))
 
 #fixed size of noise for plotting manually or testing 
+torch.manual_seed(428)
 fixed_noise = torch.randn(64, nz, 1, 1).to(device) 
 
 
@@ -214,7 +211,6 @@ num_epochs-=epoch_last
 
 
 #manully plot
-torch.manual_seed(428)
 samples = G(fixed_noise).detach()
 showImages(samples[0:64])
 

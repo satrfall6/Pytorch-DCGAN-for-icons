@@ -13,10 +13,12 @@ import torch.optim as opt
 import torch.nn as nn
 import torchvision
 import torchvision.transforms as transforms
+from torch.nn import functional as F
 import numpy as np
 import matplotlib.pyplot as plt
 import os
 from torch.nn.utils import spectral_norm
+from torch.utils.data import TensorDataset
 
 
 
@@ -34,6 +36,9 @@ device
 document = os.path.join(os.path.expanduser("~"), "/Users/s4503302/Documents/LLD_DCGAN")
 loadPath_2x = os.path.join(document, "icon_2x.pt")
 loadPath_4x = os.path.join(document, "icon_4x.pt")
+GMM_path = os.path.join(document,'GMM_clusterIdx_80_100')
+
+
 #%%
 #load seperately
 image_size = 32
@@ -45,6 +50,25 @@ icons_32_4x = None
 icons_32_2x = None
 LLDloader = torch.utils.data.DataLoader(icon_combined, shuffle=True, batch_size=64)
 #%%
+#loading index from GMM
+GMM_idx = torch.load(GMM_path)
+#cat labels to the original dataset
+icon_combined_cond = TensorDataset(icon_combined, torch.LongTensor(GMM_idx[100]))
+LLDloader_cond = torch.utils.data.DataLoader(icon_combined_cond, shuffle=True, batch_size=64)
+
+dataiter = iter(LLDloader_cond)
+images, labels = dataiter.next()
+#create onehot label in [100,100,32,32] format for the discriminator
+nl = 100
+img_size = 32
+filled = torch.zeros(nl*nl*img_size*img_size)
+filled=filled.view(100, 100, 32, 32)
+for i in range(100):
+    filled[i, i, :, :] = 1
+#%%
+
+
+
 #plot 64(8*8) images in one plot
 def showImages(imgs):
     imgs = imgs/2 + 0.5
@@ -79,8 +103,11 @@ def saveImages(imgs,path):
     plt.yticks([])
     plt.savefig(path)
     plt.show()
-
-
+    
+#for generating onehot label
+def onehot(cond,b_size=64):
+  m = F.one_hot(torch.arange(nl))
+  return m[cond].view(b_size,nl,1,1).float()
 
 ##DCGAN using batchnorm
 
@@ -89,42 +116,47 @@ class generator(nn.Module):
     # initializers
     def __init__(self):
         super(generator, self).__init__()
+        
+        
+        # cat them together
         self.main = nn.Sequential(
             # input is Z, going into a convolution
-            spectral_norm(nn.ConvTranspose2d( nz, ngf * 4, 4, 1, 0, bias=False)), 
-  
+            spectral_norm(nn.ConvTranspose2d( nz+nl, ngf*4 , 4, 1, 0, bias=False)),   
             nn.LeakyReLU(0.2, inplace=True),
             # state size. (ngf*4) x 4 x 4
-            spectral_norm(nn.ConvTranspose2d(ngf * 4, ngf * 2, 4, 2, 1, bias=False)), 
- 
+            spectral_norm(nn.ConvTranspose2d(ngf * 4, ngf * 2, 4, 2, 1, bias=False)),  
             nn.LeakyReLU(0.2, inplace=True),
             # state size. (ngf*2) x 8 x 8
-            spectral_norm(nn.ConvTranspose2d( ngf * 2, ngf * 1, 4, 2, 1, bias=False)), 
-  
+            spectral_norm(nn.ConvTranspose2d( ngf * 2, ngf * 1, 4, 2, 1, bias=False)),   
             nn.LeakyReLU(0.2, inplace=True),
+            
             # state size. (ngf*1) x 16 x 16
             nn.ConvTranspose2d( ngf, nc, 4, 2, 1, bias=False), 
             nn.BatchNorm2d(nc),
             nn.Tanh()
             # state size. (nc) x 32 x 32
             )
-        
+            
             # forward method
-    def forward(self, input):
+    def forward(self, input, cond):
+        
+        z = torch.cat([input, cond], 1)
 
-        return self.main(input)
-
+        
+        return self.main(z)
+  
 #discriminator   
 class discriminator(nn.Module):
     # initializers
     def __init__(self):
         super(discriminator, self).__init__()
+        
+        
         self.main = nn.Sequential(
-            # input is (nc) x 32 x 32
-            spectral_norm(nn.Conv2d(nc, ndf, 4, 2, 1, bias=False)), 
+            spectral_norm(nn.Conv2d(nc+nl, ndf, 4, 2, 1, bias=False)), 
             nn.LeakyReLU(0.2, inplace=True),
             # state size. (ndf) x 16 x 16
-            spectral_norm(nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=False)),
+            spectral_norm(nn.Conv2d(ndf, ndf *2, 4, 2, 1, bias=False)),
    
             nn.LeakyReLU(0.2, inplace=True),
             # state size. (ndf*2) x 8 x 8
@@ -134,22 +166,25 @@ class discriminator(nn.Module):
             # state size. (ndf*4) x 4 x 4
             spectral_norm(nn.Conv2d(ndf * 4, 1, 4, 1, 0, bias=False)),  
             nn.Sigmoid()
-        )
+            )
 
             # forward method
-    def forward(self, input):
-        return self.main(input)
-
+    def forward(self, input, cond):
+                
+        img = torch.cat([input, cond], 1)
+                
+        return self.main(img)
 
 # Batch size during training
 batch_size = 64
-
 # Number of training epochs
-num_epochs =76
+num_epochs =50
 # Number of channels in the training images. For color images this is 3
 nc = 3
 # Size of z latent vector (i.e. size of generator input)
 nz = 100
+# the number of clusters is the length of condition vector
+nl = 100
 # Size of feature maps in generator
 ngf = 64
 
@@ -165,10 +200,11 @@ fake_label = 0.03
 G_losses = []
 D_losses = []
 
-#save the model        
+#save the model
 G=generator().to(device)
 D=discriminator().to(device)
 
+#set the loss function
 criterion = nn.BCELoss()
 
 # Setup Adam optimizers for both G and D
@@ -176,11 +212,14 @@ optimizerD = opt.Adam(D.parameters(), lr=0.00042, betas=(0.9, 0.999))
 optimizerG = opt.Adam(G.parameters(), lr=0.000065, betas=(0.9, 0.999))
 
 #fixed size of noise for plotting manually or testing 
-torch.manual_seed(428)
+torch.manual_seed(46845)
 fixed_noise = torch.randn(64, nz, 1, 1).to(device) 
+fixed_cond = onehot(labels).to(device)
 
 
-#%%
+
+
+
 # apply initialize weights 
 '''
 G.apply(weights_init)
@@ -189,17 +228,9 @@ D.apply(weights_init)
 
 ##path for loading and saving the weight for training
 #weights with SN, without adding noise
-G_weightsPath = os.path.join(document,               "G_SNG4CBN_SND4C_2x_nz100gf64_Glr000065_Dlr00042")
-D_weightsPath = os.path.join(document,               "D_SNG4CBN_SND4C_2x_nz100gf64_Glr000065_Dlr00042")
-#%%
-#weights with SN and adding noise
-G_weightsPath = os.path.join(document,               "G_SNG4CBN_SND4CNoise_2x_nz100gf64_Glr000065_Dlr00042_L88_05")
-D_weightsPath = os.path.join(document,               "D_SNG4CBN_SND4CNoise_2x_nz100gf64_Glr000065_Dlr00042_L88_05")
-#%%
-#weights with SN and adding noise, training progressively using 4 clusters from KMeans
-G_weightsPath = os.path.join(document,               "G_SNG4CBN_SND4CNoise_c0c3c2c1_nz100gf64_Glr000065_Dlr00042_L88_05")
-D_weightsPath = os.path.join(document,               "D_SNG4CBN_SND4CNoise_c0c3c2c1_nz100gf64_Glr000065_Dlr00042_L88_05")
-#%%
+G_weightsPath = os.path.join(document,               "G_SNG4CBN_SND4C_all_nz100gf64_Glr000065_Dlr00042_L94_03_Noise10_16_cond100_CatBeforeFirstLayer")
+D_weightsPath = os.path.join(document,               "D_SNG4CBN_SND4C_all_nz100gf64_Glr000065_Dlr00042_L94_03_Noise10_16_cond100_CatBeforeFirstLayer")
+
 # or load the pre-trained weights
 stateG_icon32x32=torch.load(G_weightsPath,map_location=torch.device('cpu'))
 G.load_state_dict(stateG_icon32x32['state_dict'])
@@ -213,18 +244,29 @@ optimizerD.load_state_dict(stateD_icon32x32['optimizer'])
 D_losses = stateD_icon32x32["D_losses"]
 num_epochs-=epoch_last
 
-
+cluster = 63
+a= torch.ones_like(labels)
+test_label = a*cluster
+test_label = test_label.long().to(device)
+lb = onehot(test_label)
+lb = lb.to(device)
 #manully plot
-samples = G(fixed_noise).detach()
+samples = G(fixed_noise, fixed_cond).detach()
 showImages(samples[0:64])
 
 #%%
-#train the DCGAN, if not training, ignore this part
+#train the CDCGAN, if not training, ignore this part
 for epoch in range(num_epochs):
     # For each batch in the dataloader
+    
+    '''
+    change training cluster here
+    LLDloader
+    '''
     running_lossG=[]
     running_lossD=[]
-    for i, data in enumerate(LLDloader, 0):
+    for i, data in enumerate(LLDloader_cond, 0):
+        X, cond = data
 
         '''
         ###########################
@@ -238,9 +280,9 @@ for epoch in range(num_epochs):
         # Firstly, have to set grad to zero
         
         ## Format batch
-         
-        real_img = data.to(device) 
-        #adding noise to the real image
+
+        real_img = X.to(device) 
+        #add noise to stablize the training of gan
         real_img = real_img+torch.randn(real_img.size()).to(device)*0.1
         # Set the batch size same as the image batch size we input every time
         #sometimes it would not be same as the setting at original e.g.64, 60000/64 will left 32)
@@ -249,16 +291,21 @@ for epoch in range(num_epochs):
         one_label = torch.full((b_size,), real_label).to(device) 
         zero_label = torch.full((b_size,), fake_label).to(device)
         noise = torch.randn(b_size, nz, 1, 1).to(device)
+
+        #create onehot conditional label for G, it is a 100 vector
+        cond_onehot = onehot(cond, b_size).to(device)
+        #create onehot conditional label for D, it is a [batch_size 100 32 32] tensor
+        cond_filled = filled[cond].to(device)
+        
         
         D.zero_grad()
         G.zero_grad()
         # Forward pass real batch through D & G
-        D_real = D(real_img).view(-1).to(device) 
-        fake = G(noise)
-        #add noise to image from the generator
+        D_real = D(real_img, cond_filled).view(-1).to(device) 
+        fake = G(noise, cond_onehot)
         fake = fake+torch.randn(fake.size()).to(device)*0.16
-        D_fake = D(fake).view(-1).to(device)                                                   
-                                                          
+        D_fake = D(fake, cond_filled).view(-1).to(device)                                                   
+
         # Calculate loss on all-real batch
         D_loss_real = criterion(D_real, one_label)
         D_loss_fake = criterion(D_fake, zero_label)
@@ -266,19 +313,23 @@ for epoch in range(num_epochs):
         # Calculate gradients for D in backward pass
         D_loss.backward()                                                            
         optimizerD.step()
-                                                                
+                                                          
+                                                          
+
+       
+
         '''
         ###########################
         # (2) Update G network: maximize log(D(G(z)))
         ###########################
         '''
 
+
         # Since we just updated D, perform another forward pass of all-fake batch through D
         noise = torch.randn(b_size, nz, 1, 1).to(device)
-        fake = G(noise)
-        #add noise to image from the generator
+        fake = G(noise, cond_onehot)
         fake = fake+torch.randn(fake.size()).to(device)*0.16
-        D_fake = D(fake).view(-1).to(device)                                                   
+        D_fake = D(fake,cond_filled).view(-1).to(device)                                                   
 
         # Calculate G's loss based on this output
         G_loss = criterion(D_fake, one_label)
@@ -295,48 +346,61 @@ for epoch in range(num_epochs):
         
         
         
+        
+        '''
+        change training cluster here
+        '''
 
-        #showing the statistics
-        if i % 1500 == 0:
+        if i % 5000 == 0:
             print('[%d/%d][%d/%d]\t\tLoss_D: %.4f\tLoss_G: %.4f\tD(x): %.4f\tD(G(z)):%.4f'
-                   % (epoch, num_epochs, i, len(LLDloader),
+                  % (epoch, num_epochs, i, len(LLDloader_cond),
                      D_loss.item(), G_loss.item(), D_x, D_Gz))
             running_lossG.append(G_loss.item())
             running_lossD.append(D_loss.item())
-    # Save Losses for plotting later
-    if epoch % 1==0:       
+
+    if epoch % 1==0:
+        # Save Losses for plotting later
         G_losses.append(np.mean(running_lossG))
         D_losses.append(np.mean(running_lossD))
-              
-    #save weights for preventing interrupting     
-    if epoch % 3==0:
+        
+        
+        
+    if epoch % 1==0:
+
+
+
         stateG_icon32x32 = {
             'epoch': epoch,
             'state_dict': G.state_dict(),
             'optimizer': optimizerG.state_dict(),
+            'G_losses': G_losses,
         }
-        torch.save(stateG_icon32x32, G_weightsPath)
+        torch.save(stateG_icon32x32, G_weightsPath) 
+
 
         stateD_icon32x32 = {
             'epoch': epoch,
             'state_dict': D.state_dict(),
             'optimizer': optimizerD.state_dict(),
+            'D_losses': D_losses,
         }
         torch.save(stateD_icon32x32, D_weightsPath)
+
         print("saved successfully")
-    #show the ongoing generated images to make sure the model work properly   
-    if epoch % 5==0:      
-        samples = G(fixed_noise).detach()        
-        showImages(samples[0:64])
 
-
-##end process
-#path for saving plot of loss and generated images        
-Loss_savePath =  os.path.join(document,           "Loss_SNG4CBN_SND4C_2x_nz100gf64_Glr000065_Dlr00042")
-Generated_savePath =  os.path.join(document, "Generated_SNG4CBN_SND4C_2x_nz100gf64_Glr000065_Dlr00042")
         
+    if epoch % 1==0:
+      
+        samples = G(fixed_noise, fixed_cond).detach()        
+        showImages(samples[0:8])
+
+Loss_savePath =  os.path.join(document,           "Loss_SNG4CBN_SND4C_all_nz100gf64_Glr000065_Dlr00042_L94_03_Noise10_16_cond100_CatBeforeFirstLayer")
+Generated_savePath =  os.path.join(document, "Generated_SNG4CBN_SND4C_all_nz100gf64_Glr000065_Dlr00042_L94_03_Noise10_16_cond100_CatBeforeFirstLayer")
+                
+
 font = {
         'color':  'blue',
+     
         'size': 16,
         }
 
@@ -344,12 +408,12 @@ plt.figure()
 plt.plot(G_losses,label = "Loss of G")
 plt.plot(D_losses,label = "Loss of D")
 plt.legend(loc="best")
-plt.title("Loss of discriminator and gernerator after %.0f epochs" % (epoch),fontdict=font)
+plt.title("Loss of D and G after %.0f epochs" % (epoch),fontdict=font)
 plt.xlabel('Number of Epochs',fontdict=font)
-plt.ylabel('Loss of D and G',fontdict=font)
+plt.ylabel('Loss',fontdict=font)
 plt.savefig(Loss_savePath)
 plt.show()
 
 
-samples = G(fixed_noise).detach()
+samples = G(fixed_noise, fixed_cond).detach()
 saveImages(samples[0:64],Generated_savePath)
