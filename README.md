@@ -35,17 +35,19 @@ Figure 1 the structure of DCGAN
 ### __Autoencoder__ 
 By using the autoencoder, we can keep the relation between pixel and pixel, then we cluster the image from the latent space.
 
-* Stucture of autoencoder
+* Stucture of autoencoder:
 ![AE](https://i.imgur.com/ADThmZB.png)
-Figure 1
+Figure 2
 
 ### __GMM__
 We use GMM to create 100 clusters, then label them from 1 to 100 base on which cluster the images belong to. The AIC and BIC of GMM is shown as below
 
-* Labels and results from the GMM 
-![GMM](https://i.imgur.com/naQ5ICb.png) 
+* Labels from the GMM:\
+![GMM](https://i.imgur.com/naQ5ICb.png) \
 Figure 3 
-![AICBIC](https://i.imgur.com/sAFcObS.png)
+
+* AIC and BIC of the GMM: \
+![AICBIC](https://i.imgur.com/sAFcObS.png)\
 Figure 4
 
 ### __Conditional DCGAN__
@@ -57,11 +59,13 @@ Figure 5
 
 ## Results
 
-* Results of DCGAN
-![resultDCGAN](https://i.imgur.com/tMJtQGI.png)
+* Results of DCGAN:\
+![resultDCGAN](https://i.imgur.com/tMJtQGI.png)\
 Figure 6 
-* Results of Conditional DCGAN
-![resultCDCGAN](https://i.imgur.com/DxxF7F5.png)
+
+
+* Results of Conditional DCGAN:\
+![resultCDCGAN](https://i.imgur.com/DxxF7F5.png)\
 Figure 7 
 
 ## Reference
